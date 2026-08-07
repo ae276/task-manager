@@ -1168,14 +1168,12 @@
        FIREBASE SDK
        ═══════════════════════════════════════════ -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 
   <script>
     /* ═══════════════════════════════════════════
        FIREBASE CONFIG
-       ═══════════════════════════════════════════
-       ↓↓↓  הדבק כאן את הקונפיגורציה שלך מ-Firebase Console  ↓↓↓
-    */
+       ═══════════════════════════════════════════ */
     const FIREBASE_CONFIG = {
       apiKey: "AIzaSyDDPEesOK0_plfSc04ETToYHLw4KzT3kP8",
       authDomain: "task-manager-baefc.firebaseapp.com",
@@ -1186,9 +1184,8 @@
       appId: "1:500203554138:web:7c35de4ba2ec39ff431f63",
       measurementId: "G-M6V03C3YF4"
     };
-    /* ↑↑↑  סוף הקונפיגורציה  ↑↑↑ */
 
-    const IS_FIREBASE = FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY";
+    const IS_FIREBASE = FIREBASE_CONFIG.databaseURL && FIREBASE_CONFIG.databaseURL !== "";
 
     // ═══════════════════════════════════════════
     // APP STATE
@@ -1200,18 +1197,16 @@
     };
 
     // ═══════════════════════════════════════════
-    // TASK STORE  (Firestore or localStorage)
+    // TASK STORE  (Realtime Database or localStorage)
     // ═══════════════════════════════════════════
     const TaskStore = {
-      db: null,
-      unsubscribe: null,
+      dbRef: null,
 
       init() {
         if (IS_FIREBASE) {
           try {
             firebase.initializeApp(FIREBASE_CONFIG);
-            this.db = firebase.firestore();
-            this.db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+            this.dbRef = firebase.database().ref('tasks');
             this._setSyncStatus('synced');
           } catch (e) {
             console.error('Firebase init error:', e);
@@ -1250,29 +1245,41 @@
       },
 
       listen(callback) {
-        if (!IS_FIREBASE || !this.db) {
+        if (!IS_FIREBASE || !this.dbRef) {
           callback(state.tasks);
           return;
         }
         this._setSyncStatus('syncing');
-        this.unsubscribe = this.db.collection('tasks')
-          .orderBy('createdAt', 'desc')
-          .onSnapshot(snapshot => {
-            state.tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        this.dbRef.on('value', snapshot => {
+          const data = snapshot.val();
+          if (data) {
+            state.tasks = Object.values(data).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          } else {
+            state.tasks = [];
+          }
+          this._setSyncStatus('synced');
+          callback(state.tasks);
+        }, err => {
+          console.error('Firebase listen error:', err);
+          this._setSyncStatus('offline');
+        });
+
+        // Monitor connection state
+        firebase.database().ref('.info/connected').on('value', snap => {
+          if (snap.val() === true) {
             this._setSyncStatus('synced');
-            callback(state.tasks);
-          }, err => {
-            console.error('Firestore listen error:', err);
+          } else {
             this._setSyncStatus('offline');
-          });
+          }
+        });
       },
 
       async add(task) {
         task.createdAt = Date.now();
         task.updatedAt = Date.now();
-        if (IS_FIREBASE && this.db) {
+        if (IS_FIREBASE && this.dbRef) {
           this._setSyncStatus('syncing');
-          await this.db.collection('tasks').doc(task.id).set(task);
+          await this.dbRef.child(task.id).set(task);
         } else {
           state.tasks.unshift(task);
           this._saveLocal();
@@ -1283,9 +1290,9 @@
 
       async update(id, data) {
         data.updatedAt = Date.now();
-        if (IS_FIREBASE && this.db) {
+        if (IS_FIREBASE && this.dbRef) {
           this._setSyncStatus('syncing');
-          await this.db.collection('tasks').doc(id).update(data);
+          await this.dbRef.child(id).update(data);
         } else {
           const i = state.tasks.findIndex(t => t.id === id);
           if (i >= 0) { Object.assign(state.tasks[i], data); }
@@ -1296,9 +1303,9 @@
       },
 
       async remove(id) {
-        if (IS_FIREBASE && this.db) {
+        if (IS_FIREBASE && this.dbRef) {
           this._setSyncStatus('syncing');
-          await this.db.collection('tasks').doc(id).delete();
+          await this.dbRef.child(id).remove();
         } else {
           state.tasks = state.tasks.filter(t => t.id !== id);
           this._saveLocal();
