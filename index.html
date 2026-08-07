@@ -988,6 +988,143 @@
     .task-card:nth-child(5) { animation-delay: 0.14s; }
 
     /* ═══════════════════════════════════════════
+       CALENDAR VIEW
+       ═══════════════════════════════════════════ */
+    .calendar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-sm) 0 var(--space-md);
+    }
+    .calendar-header h2 {
+      font-size: 1.15rem;
+      font-weight: 600;
+    }
+    .calendar-nav-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      transition: var(--transition-base);
+    }
+    .calendar-nav-btn:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+    .calendar-today-btn {
+      padding: var(--space-xs) var(--space-md);
+      border-radius: var(--radius-pill);
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--cat-work);
+      background: var(--cat-work-bg);
+      border: 1px solid var(--cat-work-glow);
+      transition: var(--transition-base);
+    }
+    .calendar-today-btn:hover { filter: brightness(1.2); }
+
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+      margin-bottom: var(--space-md);
+    }
+    .calendar-weekday {
+      text-align: center;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-tertiary);
+      padding: var(--space-sm) 0;
+    }
+    .calendar-day {
+      aspect-ratio: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding-top: var(--space-sm);
+      border-radius: var(--radius-sm);
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: var(--transition-base);
+      position: relative;
+      min-height: 48px;
+    }
+    .calendar-day:hover { background: var(--bg-surface-hover); }
+    .calendar-day.empty { cursor: default; }
+    .calendar-day.empty:hover { background: none; }
+    .calendar-day.today .day-number {
+      background: var(--cat-work);
+      color: white;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+    }
+    .calendar-day.selected {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-medium);
+    }
+    .calendar-day.other-month { opacity: 0.3; }
+    .day-number {
+      font-size: 0.85rem;
+      line-height: 1;
+    }
+    .day-dots {
+      display: flex;
+      gap: 3px;
+      margin-top: 4px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .day-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+    .day-dot.work { background: var(--cat-work); }
+    .day-dot.personal { background: var(--cat-personal); }
+    .day-dot.longterm { background: var(--cat-longterm); }
+    .day-dot.gcal { background: hsl(25, 95%, 55%); }
+
+    .calendar-day-detail {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: var(--space-md);
+      animation: slideUp 0.25s ease;
+    }
+    .calendar-day-detail-header {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: var(--space-md);
+      padding-bottom: var(--space-sm);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+    }
+    .calendar-no-tasks {
+      color: var(--text-tertiary);
+      font-size: 0.88rem;
+      text-align: center;
+      padding: var(--space-lg);
+    }
+
+    @media (min-width: 768px) {
+      .calendar-day { min-height: 72px; padding-top: var(--space-sm); }
+      .calendar-day .day-number { font-size: 0.92rem; }
+      .day-dot { width: 7px; height: 7px; }
+    }
+
+    /* ═══════════════════════════════════════════
        SCROLLBAR
        ═══════════════════════════════════════════ */
     ::-webkit-scrollbar { width: 6px; }
@@ -1069,6 +1206,9 @@
         <button class="sidebar-tab" data-view="summary">
           <span class="tab-icon">📱</span> תמונת מצב
         </button>
+        <button class="sidebar-tab" data-view="calendar">
+          <span class="tab-icon">📅</span> יומן
+        </button>
       </nav>
       <div class="sidebar-stats" id="sidebar-stats"></div>
     </aside>
@@ -1079,6 +1219,7 @@
       <div id="view-focus" class="view"></div>
       <div id="view-roadmap" class="view"></div>
       <div id="view-summary" class="view"></div>
+      <div id="view-calendar" class="view"></div>
     </main>
 
     <!-- ── Bottom Navigation (Mobile) ── -->
@@ -1098,6 +1239,10 @@
       <button class="nav-tab" data-view="summary">
         <span class="nav-icon">📱</span>
         <span>סיכום</span>
+      </button>
+      <button class="nav-tab" data-view="calendar">
+        <span class="nav-icon">📅</span>
+        <span>יומן</span>
       </button>
     </nav>
   </div>
@@ -1426,6 +1571,13 @@
     // ═══════════════════════════════════════════
     // VIEW ENGINE
     // ═══════════════════════════════════════════
+    // Calendar state
+    const calendarState = {
+      year: new Date().getFullYear(),
+      month: new Date().getMonth(),
+      selectedDate: null
+    };
+
     const ViewEngine = {
       renderCurrentView() {
         switch (state.currentView) {
@@ -1433,6 +1585,7 @@
           case 'focus': this.renderFocus(); break;
           case 'roadmap': this.renderRoadmap(); break;
           case 'summary': this.renderSummary(); break;
+          case 'calendar': this.renderCalendar(); break;
         }
         TaskStore._updateSidebarStats();
       },
@@ -1723,6 +1876,113 @@
               <button class="task-action-btn delete" onclick="confirmDelete('${task.id}')" title="מחק">🗑️</button>
             </div>
           </div>`;
+      },
+
+      // ── Calendar View ──
+      renderCalendar() {
+        const container = document.getElementById('view-calendar');
+        const year = calendarState.year;
+        const month = calendarState.month;
+        const hebrewMonths = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+        const hebrewDays = ['א\'','ב\'','ג\'','ד\'','ה\'','ו\'','ש\''];
+        const today = new Date(); today.setHours(0,0,0,0);
+
+        // Build task map: dateStr -> [tasks]
+        const taskMap = {};
+        state.tasks.forEach(t => {
+          if (t.dueDate) {
+            if (!taskMap[t.dueDate]) taskMap[t.dueDate] = [];
+            taskMap[t.dueDate].push(t);
+          }
+        });
+
+        // Calendar grid
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        const startDay = firstDay.getDay(); // 0=Sunday
+        const totalDays = lastDay.getDate();
+
+        // Previous month days to fill
+        const prevMonthLast = new Date(year, month, 0).getDate();
+
+        let daysHtml = '';
+        // Header row
+        hebrewDays.forEach(d => {
+          daysHtml += `<div class="calendar-weekday">${d}</div>`;
+        });
+
+        // Previous month filler
+        for (let i = 0; i < startDay; i++) {
+          const dayNum = prevMonthLast - startDay + 1 + i;
+          daysHtml += `<div class="calendar-day other-month empty"><span class="day-number">${dayNum}</span></div>`;
+        }
+
+        // Current month days
+        for (let d = 1; d <= totalDays; d++) {
+          const dateObj = new Date(year, month, d);
+          const dateStr = dateObj.toISOString().split('T')[0];
+          const isToday = dateObj.getTime() === today.getTime();
+          const isSelected = calendarState.selectedDate === dateStr;
+          const dayTasks = taskMap[dateStr] || [];
+
+          let dotsHtml = '';
+          const cats = new Set(dayTasks.map(t => t.category));
+          if (cats.has('WORK')) dotsHtml += '<span class="day-dot work"></span>';
+          if (cats.has('PERSONAL')) dotsHtml += '<span class="day-dot personal"></span>';
+          if (cats.has('LONG_TERM')) dotsHtml += '<span class="day-dot longterm"></span>';
+
+          const classes = ['calendar-day'];
+          if (isToday) classes.push('today');
+          if (isSelected) classes.push('selected');
+
+          daysHtml += `<div class="${classes.join(' ')}" data-date="${dateStr}" onclick="selectCalendarDate('${dateStr}')">
+            <span class="day-number">${d}</span>
+            ${dotsHtml ? `<div class="day-dots">${dotsHtml}</div>` : ''}
+          </div>`;
+        }
+
+        // Next month filler
+        const totalCells = startDay + totalDays;
+        const remaining = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+        for (let i = 1; i <= remaining; i++) {
+          daysHtml += `<div class="calendar-day other-month empty"><span class="day-number">${i}</span></div>`;
+        }
+
+        // Selected day detail
+        let detailHtml = '';
+        if (calendarState.selectedDate) {
+          const selDate = new Date(calendarState.selectedDate + 'T00:00:00');
+          const dayNames = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+          const label = `יום ${dayNames[selDate.getDay()]}, ${selDate.getDate()} ${hebrewMonths[selDate.getMonth()]}`;
+          const dayTasks = taskMap[calendarState.selectedDate] || [];
+          const activeTasks = dayTasks.filter(t => t.status !== 'Completed');
+          const completedTasks = dayTasks.filter(t => t.status === 'Completed');
+
+          detailHtml = `
+            <div class="calendar-day-detail">
+              <div class="calendar-day-detail-header">📅 ${label}</div>
+              ${dayTasks.length === 0
+                ? '<div class="calendar-no-tasks">אין משימות ליום הזה</div>'
+                : activeTasks.map(t => this.renderTaskCard(t)).join('') +
+                  (completedTasks.length > 0 ? completedTasks.map(t => this.renderTaskCard(t)).join('') : '')
+              }
+            </div>`;
+        }
+
+        container.innerHTML = `
+          <div class="calendar-header">
+            <button class="calendar-nav-btn" onclick="navigateCalendar(1)" title="חודש הבא">◀</button>
+            <div style="display:flex;align-items:center;gap:var(--space-sm)">
+              <h2>📅 ${hebrewMonths[month]} ${year}</h2>
+              <button class="calendar-today-btn" onclick="goToToday()">היום</button>
+            </div>
+            <button class="calendar-nav-btn" onclick="navigateCalendar(-1)" title="חודש קודם">▶</button>
+          </div>
+          <div class="calendar-grid">
+            ${daysHtml}
+          </div>
+          ${detailHtml}
+        `;
       }
     };
 
@@ -1741,6 +2001,30 @@
         ViewEngine.renderCurrentView();
       }
     };
+    // ═══════════════════════════════════════════
+    // CALENDAR NAVIGATION
+    // ═══════════════════════════════════════════
+    function selectCalendarDate(dateStr) {
+      calendarState.selectedDate = calendarState.selectedDate === dateStr ? null : dateStr;
+      ViewEngine.renderCalendar();
+    }
+
+    function navigateCalendar(direction) {
+      // direction: 1 = next month, -1 = previous month (RTL reversed in buttons)
+      calendarState.month += direction;
+      if (calendarState.month > 11) { calendarState.month = 0; calendarState.year++; }
+      if (calendarState.month < 0) { calendarState.month = 11; calendarState.year--; }
+      calendarState.selectedDate = null;
+      ViewEngine.renderCalendar();
+    }
+
+    function goToToday() {
+      const now = new Date();
+      calendarState.year = now.getFullYear();
+      calendarState.month = now.getMonth();
+      calendarState.selectedDate = now.toISOString().split('T')[0];
+      ViewEngine.renderCalendar();
+    }
 
     // ═══════════════════════════════════════════
     // HELPERS
