@@ -1118,6 +1118,63 @@
       padding: var(--space-lg);
     }
 
+    .gcal-event-card {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      padding: var(--space-sm) var(--space-md);
+      margin-bottom: var(--space-sm);
+      background: hsla(25, 95%, 55%, 0.08);
+      border: 1px solid hsla(25, 95%, 55%, 0.2);
+      border-radius: var(--radius-md);
+      font-size: 0.88rem;
+    }
+    .gcal-event-card .gcal-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: hsl(25, 95%, 55%);
+      flex-shrink: 0;
+    }
+    .gcal-event-card .gcal-time {
+      color: hsl(25, 95%, 65%);
+      font-size: 0.78rem;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .gcal-event-card .gcal-title {
+      color: var(--text-primary);
+    }
+    .gcal-event-card .gcal-badge {
+      margin-right: auto;
+      font-size: 0.7rem;
+      color: var(--text-tertiary);
+      background: var(--bg-surface);
+      padding: 1px 6px;
+      border-radius: var(--radius-pill);
+    }
+    .gcal-connect-btn {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      padding: var(--space-xs) var(--space-md);
+      border-radius: var(--radius-pill);
+      font-size: 0.8rem;
+      font-weight: 500;
+      transition: var(--transition-base);
+    }
+    .gcal-connect-btn.connect {
+      color: hsl(25, 95%, 60%);
+      background: hsla(25, 95%, 55%, 0.1);
+      border: 1px solid hsla(25, 95%, 55%, 0.25);
+    }
+    .gcal-connect-btn.disconnect {
+      color: var(--text-tertiary);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+    }
+    .gcal-connect-btn:hover { filter: brightness(1.2); }
+
     @media (min-width: 768px) {
       .calendar-day { min-height: 72px; padding-top: var(--space-sm); }
       .calendar-day .day-number { font-size: 0.92rem; }
@@ -1314,6 +1371,7 @@
        ═══════════════════════════════════════════ -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <script>
     /* ═══════════════════════════════════════════
@@ -1576,6 +1634,103 @@
       year: new Date().getFullYear(),
       month: new Date().getMonth(),
       selectedDate: null
+    };
+
+    // ═══════════════════════════════════════════
+    // GOOGLE CALENDAR
+    // ═══════════════════════════════════════════
+    const GCAL_CLIENT_ID = '500203554138-dnpm9ubv9noh3ugrb618ihi5g4l6o7vl.apps.googleusercontent.com';
+
+    const GCal = {
+      tokenClient: null,
+      accessToken: null,
+      events: [],    // cached events for current month view
+      connected: false,
+
+      init() {
+        // Wait for GIS library to load
+        const checkGIS = setInterval(() => {
+          if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+            clearInterval(checkGIS);
+            this.tokenClient = google.accounts.oauth2.initTokenClient({
+              client_id: GCAL_CLIENT_ID,
+              scope: 'https://www.googleapis.com/auth/calendar.readonly',
+              callback: (response) => {
+                if (response.error) {
+                  console.error('GCal auth error:', response);
+                  showToast('❌ שגיאה בהתחברות ל-Google Calendar', 'error');
+                  return;
+                }
+                this.accessToken = response.access_token;
+                this.connected = true;
+                showToast('📅 Google Calendar מחובר!');
+                this.fetchEvents();
+              }
+            });
+          }
+        }, 200);
+      },
+
+      connect() {
+        if (!this.tokenClient) {
+          showToast('⏳ טוען שירות Google...', 'error');
+          return;
+        }
+        this.tokenClient.requestAccessToken({ prompt: 'consent' });
+      },
+
+      disconnect() {
+        if (this.accessToken) {
+          google.accounts.oauth2.revoke(this.accessToken);
+        }
+        this.accessToken = null;
+        this.connected = false;
+        this.events = [];
+        showToast('📅 Google Calendar נותק');
+        ViewEngine.renderCalendar();
+      },
+
+      async fetchEvents() {
+        if (!this.accessToken) return;
+
+        const year = calendarState.year;
+        const month = calendarState.month;
+        const timeMin = new Date(year, month, 1).toISOString();
+        const timeMax = new Date(year, month + 1, 0, 23, 59, 59).toISOString();
+
+        try {
+          const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
+            `timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}` +
+            `&singleEvents=true&orderBy=startTime&maxResults=250`;
+
+          const resp = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${this.accessToken}` }
+          });
+
+          if (resp.status === 401) {
+            // Token expired, re-auth
+            this.tokenClient.requestAccessToken({ prompt: '' });
+            return;
+          }
+
+          if (!resp.ok) throw new Error('Calendar API error');
+
+          const data = await resp.json();
+          this.events = (data.items || []).map(ev => ({
+            id: ev.id,
+            title: ev.summary || '(ללא כותרת)',
+            date: ev.start.date || ev.start.dateTime?.split('T')[0],
+            startTime: ev.start.dateTime ? new Date(ev.start.dateTime).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : 'כל היום',
+            endTime: ev.end.dateTime ? new Date(ev.end.dateTime).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '',
+            isAllDay: !!ev.start.date
+          }));
+
+          ViewEngine.renderCalendar();
+        } catch (err) {
+          console.error('GCal fetch error:', err);
+          showToast('❌ שגיאה בשליפת אירועים', 'error');
+        }
+      }
     };
 
     const ViewEngine = {
@@ -1896,6 +2051,15 @@
           }
         });
 
+        // Build gcal event map: dateStr -> [events]
+        const gcalMap = {};
+        GCal.events.forEach(ev => {
+          if (ev.date) {
+            if (!gcalMap[ev.date]) gcalMap[ev.date] = [];
+            gcalMap[ev.date].push(ev);
+          }
+        });
+
         // Calendar grid
         const firstDay = new Date(year, month, 1);
         const lastDay = new Date(year, month + 1, 0);
@@ -1924,12 +2088,14 @@
           const isToday = dateObj.getTime() === today.getTime();
           const isSelected = calendarState.selectedDate === dateStr;
           const dayTasks = taskMap[dateStr] || [];
+          const dayGcal = gcalMap[dateStr] || [];
 
           let dotsHtml = '';
           const cats = new Set(dayTasks.map(t => t.category));
           if (cats.has('WORK')) dotsHtml += '<span class="day-dot work"></span>';
           if (cats.has('PERSONAL')) dotsHtml += '<span class="day-dot personal"></span>';
           if (cats.has('LONG_TERM')) dotsHtml += '<span class="day-dot longterm"></span>';
+          if (dayGcal.length > 0) dotsHtml += '<span class="day-dot gcal"></span>';
 
           const classes = ['calendar-day'];
           if (isToday) classes.push('today');
@@ -1955,19 +2121,35 @@
           const dayNames = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
           const label = `יום ${dayNames[selDate.getDay()]}, ${selDate.getDate()} ${hebrewMonths[selDate.getMonth()]}`;
           const dayTasks = taskMap[calendarState.selectedDate] || [];
+          const dayGcal = gcalMap[calendarState.selectedDate] || [];
           const activeTasks = dayTasks.filter(t => t.status !== 'Completed');
           const completedTasks = dayTasks.filter(t => t.status === 'Completed');
+          const hasContent = dayTasks.length > 0 || dayGcal.length > 0;
+
+          const gcalEventsHtml = dayGcal.map(ev => `
+            <div class="gcal-event-card">
+              <span class="gcal-dot"></span>
+              <span class="gcal-time">${ev.isAllDay ? 'כל היום' : ev.startTime + (ev.endTime ? '-' + ev.endTime : '')}</span>
+              <span class="gcal-title">${ev.title}</span>
+              <span class="gcal-badge">Google</span>
+            </div>
+          `).join('');
 
           detailHtml = `
             <div class="calendar-day-detail">
               <div class="calendar-day-detail-header">📅 ${label}</div>
-              ${dayTasks.length === 0
-                ? '<div class="calendar-no-tasks">אין משימות ליום הזה</div>'
-                : activeTasks.map(t => this.renderTaskCard(t)).join('') +
+              ${!hasContent
+                ? '<div class="calendar-no-tasks">אין משימות ואירועים ליום הזה</div>'
+                : gcalEventsHtml +
+                  activeTasks.map(t => this.renderTaskCard(t)).join('') +
                   (completedTasks.length > 0 ? completedTasks.map(t => this.renderTaskCard(t)).join('') : '')
               }
             </div>`;
         }
+
+        const gcalBtnHtml = GCal.connected
+          ? `<button class="gcal-connect-btn disconnect" onclick="GCal.disconnect()">📅 נתק Google</button>`
+          : `<button class="gcal-connect-btn connect" onclick="GCal.connect()">📅 חבר Google Calendar</button>`;
 
         container.innerHTML = `
           <div class="calendar-header">
@@ -1977,6 +2159,9 @@
               <button class="calendar-today-btn" onclick="goToToday()">היום</button>
             </div>
             <button class="calendar-nav-btn" onclick="navigateCalendar(-1)" title="חודש קודם">▶</button>
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-bottom:var(--space-sm)">
+            ${gcalBtnHtml}
           </div>
           <div class="calendar-grid">
             ${daysHtml}
@@ -2010,12 +2195,13 @@
     }
 
     function navigateCalendar(direction) {
-      // direction: 1 = next month, -1 = previous month (RTL reversed in buttons)
       calendarState.month += direction;
       if (calendarState.month > 11) { calendarState.month = 0; calendarState.year++; }
       if (calendarState.month < 0) { calendarState.month = 11; calendarState.year--; }
       calendarState.selectedDate = null;
-      ViewEngine.renderCalendar();
+      // Re-fetch gcal events for new month
+      if (GCal.connected) GCal.fetchEvents();
+      else ViewEngine.renderCalendar();
     }
 
     function goToToday() {
@@ -2023,7 +2209,8 @@
       calendarState.year = now.getFullYear();
       calendarState.month = now.getMonth();
       calendarState.selectedDate = now.toISOString().split('T')[0];
-      ViewEngine.renderCalendar();
+      if (GCal.connected) GCal.fetchEvents();
+      else ViewEngine.renderCalendar();
     }
 
     // ═══════════════════════════════════════════
@@ -2230,6 +2417,7 @@
 
       // ── Init ──
       TaskStore.init();
+      GCal.init();
       TaskStore.listen(tasks => {
         ViewEngine.renderCurrentView();
       });
