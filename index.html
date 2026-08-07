@@ -1952,9 +1952,11 @@
         category: parsed.category,
         priority: parsed.priority || 'Medium',
         status: 'Pending',
-        dueDate: parsed.dueDate || null,
-        milestones: parsed.category === 'LONG_TERM' ? [] : undefined
+        dueDate: parsed.dueDate || null
       };
+      if (parsed.category === 'LONG_TERM') {
+        task.milestones = [];
+      }
       TaskStore.add(task);
 
       const catLabels = { WORK: '🔵', PERSONAL: '🟢', LONG_TERM: '🟣' };
